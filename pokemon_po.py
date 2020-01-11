@@ -8,6 +8,8 @@ pygame.init()
 SIZE = [500, 500]
 I_FOLDER = "images"
 P = dict(BACKGROUND='PokePo_map.png',
+         BACKGROUND2='PokePo_map2.png',
+         HOUSE='house.png',
          LOGO='logo.png',
          PLAYER='head.png',
          POKE1='poke_1.png',
@@ -32,10 +34,16 @@ P = dict(BACKGROUND='PokePo_map.png',
          POKE20='poke_20.png',
          )
 PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
+# set to scale up or down how fast things run
+TIME_SCALE = 1
+
+# custom events
+player_moving_event = pygame.USEREVENT+1
+player_stopped_event = pygame.USEREVENT+2
 
 
 def image_load(name):
-    return pygame.image.load(name)
+    return pygame.image.load(name).convert_alpha()
 
 
 def poke_points():
@@ -55,7 +63,7 @@ def poke_times():
     s = 5
     # x = random.gauss(u, s)
     x = 3
-    return math.floor(x)*1000
+    return math.floor(x) * 1000 * TIME_SCALE
 
 
 def poke_spawn_weights(x, y):
@@ -65,6 +73,13 @@ def poke_spawn_weights(x, y):
     r = [i/s for i in r]
     z = x+10*(y-1)
     return r[z]
+
+
+def player_vision_adjacent(current_node):
+    # calcs adjacent nodes to the one passed and returns it as a list
+    # does so iteratively starting with top and moving clockwise
+
+    return adjacent_list
 
 
 class Node:
@@ -90,12 +105,25 @@ class Grid:
                 self.grid_locs[x+str(y)] = new_node
 
 
-class Pokemon(pygame.sprite.Sprite):
-    def __init__(self, points, x, y):
+class Building(pygame.sprite.Sprite):
+    def __init__(self, x, y, build_type='HOUSE'):
         super().__init__()
-        # the poke sprites are 20x20 pixels and x,y are for top left corner
         self.x = x
         self.y = y
+        self.sprites = {'HOUSE': image_load(PICS['HOUSE'])}
+        self.image = self.sprites[build_type]
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+
+class Pokemon(pygame.sprite.Sprite):
+    def __init__(self, points, node):
+        super().__init__()
+        # the poke sprites are 20x20 pixels and x,y are for top left corner
+        self.current_node = node
+        self.x = self.current_node.x
+        self.y = self.current_node.y
         self.points = points
         # life time remaining default is 15 sec
         self.time = 15
@@ -137,60 +165,128 @@ class Pokemon(pygame.sprite.Sprite):
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, node, vision_func, builds):
         super().__init__()
-        self.x = x
-        self.y = y
+        self.current_node = node
+        self.x = self.current_node.x
+        self.y = self.current_node.y
+
         self.step = 45
+        # human walkspeed found here https://deepblue.lib.umich.edu/bitstream/handle/2027.42/67419/10.1177_0022022199030002003.pdf;jsessionid=A0778AA95E2F557ECFD15EC6DDAAA75B?sequence=2
+        # titled "The Pace of Life in 31 Countries" on page 13 of the pdf
+        # for simplicity we assume 3 mph which means it takes 8 minutes to walk .4 miles or the distance of 1 cell
+        # so our timescale will be based on the fact that it takes 8 seconds to talk from intersection to intersection
+        self.walk_time = 8
+        self.direction = 0
+        # pass a function to vision_type it will be used to check which pokemon should be blitted
+        self.vision_function = vision_func
+
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
-        self.rect.left = x-12.5
-        self.rect.top = y-12.5
+        self.rect.x = self.x
+        self.rect.y = self.y
+
         self.points = 0
 
-    def move(self, key):
-        if key == pygame.K_UP:
-            # print("UP")
-            if self.rect.top > 50:
-                self.rect = self.rect.move(0, -self.step)
-        elif key == pygame.K_DOWN:
-            # print("DOWN")
-            if self.rect.bottom < 450:
-                self.rect = self.rect.move(0, self.step)
-        elif key == pygame.K_RIGHT:
-            # print("RIGHT")
-            if self.rect.right < 450:
-                self.rect = self.rect.move(self.step, 0)
-        elif key == pygame.K_LEFT:
-            # print("LEFT")
-            if self.rect.left > 50:
-                self.rect = self.rect.move(-self.step, 0)
+        # wall group for collision purposes
+        self.builds = builds
+
+    def move_up(self, delta):
+        self.direction = 'up'
+        print(self.direction)
+        self.rect = self.rect.move(0, -self.step / self.walk_time * delta * TIME_SCALE)
+
+    def move_down(self, delta):
+        self.direction = 'down'
+        print(self.direction)
+        self.rect = self.rect.move(0, self.step / self.walk_time * delta * TIME_SCALE)
+
+    def move_left(self, delta):
+        self.direction = 'left'
+        print(self.direction)
+        self.rect = self.rect.move(-self.step / self.walk_time * delta * TIME_SCALE, 0)
+
+    def move_right(self, delta):
+        self.direction = 'right'
+        print(self.direction)
+        self.rect = self.rect.move(self.step / self.walk_time * delta * TIME_SCALE, 0)
+
+    def check_vision(self):
+        visible_nodes = self.vision_function(self.current_node)
+        return visible_nodes
+
+    def update(self):
+        # input handling for movement
+        pressed = pygame.key.get_pressed()
+        if pressed[pygame.K_UP]:
+            if self.rect.top > 40:
+                self.move_up(pygame.time.Clock().tick(30) / 30)
+        elif pressed[pygame.K_RIGHT]:
+            if self.rect.right < 460:
+                self.move_right(pygame.time.Clock().tick(30) / 30)
+        elif pressed[pygame.K_DOWN]:
+            if self.rect.bottom < 460:
+                self.move_down(pygame.time.Clock().tick(30) / 30)
+        elif pressed[pygame.K_LEFT]:
+            if self.rect.left > 40:
+                self.move_left(pygame.time.Clock().tick(30) / 30)
+
+        self.build_collision()
+
+    def build_collision(self):
+        for b in self.builds:
+            if pygame.sprite.collide_rect(self, b):
+                if self.direction == 'up':
+                    self.rect.top = b.rect.bottom
+                if self.direction == 'down':
+                    self.rect.bottom= b.rect.top
+                if self.direction == 'right':
+                    self.rect.right = b.rect.left
+                if self.direction == 'left':
+                    self.rect.left = b.rect.right
 
 
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode(SIZE)
         pygame.display.set_caption("Pokemon Po Sim")
-        self.background = image_load(PICS['BACKGROUND'])
+        self.background = image_load(PICS['BACKGROUND2'])
         self.logo = image_load(PICS['LOGO'])
+        pygame.display.set_icon(self.logo)
+
         self.grid = Grid()
-        spawn_key = random.choice(list(self.grid.grid_locs.keys()))
-        print(spawn_key)
+
         self.pokes_list = pygame.sprite.Group()
         self.all_sprites_list = pygame.sprite.Group()
-        self.player = Player(self.grid.grid_locs[spawn_key].x, self.grid.grid_locs[spawn_key].y)
+        self.build_list = pygame.sprite.Group()
+
+        # spawn buildings in between the gridlines so 81 total
+        # the sprites for the buildings are 14x14 so we correct by -7 to move the center to the correct spot
+        for x in range(1, 10):
+            for y in range(1, 10):
+                # i love magic numbers
+                new_building = Building(x * self.grid.spacing + 15, y * self.grid.spacing + 15, build_type='HOUSE')
+                self.build_list.add(new_building)
+
+        spawn_key = random.choice(list(self.grid.grid_locs.keys()))
+        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=player_vision_adjacent, builds=self.build_list)
         self.all_sprites_list.add(self.player)
 
+        self.fps = 30
+
     def spawn_pokemon(self):
+        print('----------------------------')
         print('spawning a poke')
         pop = self.grid.grid_locs
         weights = [i.weight for i in pop.values()]
         names = [n.name for n in pop.values()]
         choice = random.choices(population=names, weights=weights)
-        print(choice[0])
-        print((self.grid.grid_locs[choice[0]].x, self.grid.grid_locs[choice[0]].y))
-        new_poke = Pokemon(poke_points(), self.grid.grid_locs[choice[0]].x, self.grid.grid_locs[choice[0]].y)
+        print('at node: ' + choice[0])
+        print(('with coords: ' + str((self.grid.grid_locs[choice[0]].x, self.grid.grid_locs[choice[0]].y))))
+
+        new_poke = Pokemon(poke_points(), node=self.grid.grid_locs[choice[0]])
         print('value: ' + str(new_poke.points))
+
         self.pokes_list.add(new_poke)
         self.all_sprites_list.add(new_poke)
         pygame.time.set_timer(pygame.USEREVENT, poke_times(), True)
@@ -201,22 +297,38 @@ class Game:
         pygame.time.set_timer(pygame.USEREVENT, poke_times(), True)
         play = True
         while play:
-            # 30(?) fps
-            clock.tick(30)
+            # fps
+            ms = clock.tick(self.fps)
+            # # input handling for movement
+            # pressed = pygame.key.get_pressed()
+            # if pressed[pygame.K_UP]:
+            #     if self.player.rect.top > 40:
+            #         self.player.move_up(ms / self.fps)
+            # elif pressed[pygame.K_RIGHT]:
+            #     if self.player.rect.right < 460:
+            #         self.player.move_right(ms / self.fps)
+            # elif pressed[pygame.K_DOWN]:
+            #     if self.player.rect.bottom < 460:
+            #         self.player.move_down(ms / self.fps)
+            # elif pressed[pygame.K_LEFT]:
+            #     if self.player.rect.left > 40:
+            #         self.player.move_left(ms / self.fps)
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     quit()
                 if event.type == pygame.USEREVENT:
                     self.spawn_pokemon()
-                if event.type == pygame.KEYDOWN:
-                    self.player.move(event.key)
+
             pokes_hit_list = pygame.sprite.spritecollide(self.player, self.pokes_list, True)
             for poke in pokes_hit_list:
                 self.player.points += poke.points
                 print(self.player.points)
+
+            self.all_sprites_list.update()
             self.screen.blit(self.background, (0, 0))
-            # self.screen.blit(self.player.sprite, self.player.rect)
+            self.build_list.draw(self.screen)
             self.all_sprites_list.draw(self.screen)
             pygame.display.flip()
 

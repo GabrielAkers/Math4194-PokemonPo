@@ -10,6 +10,7 @@ pygame.init()
 SIZE = [500, 500]
 I_FOLDER = "images"
 P = dict(BACKGROUND='PokePo_map.png',
+         NODE='node.png',
          LOGO='logo.png',
          PLAYER='head.png',
          POKE1='poke_1.png',
@@ -35,8 +36,10 @@ P = dict(BACKGROUND='PokePo_map.png',
          )
 PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
 # set to scale up or down how fast things run, (0,1) slows game down, (1, inf) speeds up, 1 keeps default
-TIME_SCALE = 10
-FPS = 30
+TIME_SCALE = 3
+FPS = 60
+CONTROL = 'HUMAN'
+LETTER = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8, 'I': 9, 'J': 10}
 
 # custom events
 player_walked_event = pygame.USEREVENT+1
@@ -62,7 +65,8 @@ def poke_times():
     # TODO: assuming mean 30 sd 5
     u = 30
     s = 5
-    x = random.gauss(u, s)
+    # x = random.gauss(u, s)
+    x = 3
     return x * 1000 / TIME_SCALE
 
 
@@ -75,20 +79,19 @@ def poke_spawn_weights(x, y):
     return r[z]
 
 
-def player_vision_adjacent(current_node):
-    # calcs adjacent nodes to the one passed and returns it as a list
-    # does so iteratively starting with top and moving clockwise
-    # TODO
-
-    return adjacent_list
-
-
-class Node:
+class Node(pygame.sprite.Sprite):
     def __init__(self, name, x, y, weight):
+        super().__init__()
+
         self.name = name
         self.x = x
         self.y = y
         self.weight = weight
+        self.image = image_load(PICS['NODE'])
+        self.rect = self.image.get_rect()
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+        self.adjacent_nodes = self.get_adjacent()
 
         self.pokes_seen_here = []
 
@@ -103,6 +106,51 @@ class Node:
         print('total poke seen: ' + str(self.poke_count))
         print('sum poke points: ' + str(self.sum_poke_points))
 
+    def get_row(self):
+        # names are like 'A10' so name[0] is always a letter
+        self_row = self.name[0]
+        return self_row
+
+    def get_column(self):
+        # names are like 'A10' so name[1:] is always a number
+        self_column = int(self.name[1:])
+        return self_column
+
+    def get_adjacent(self):
+        my_row = self.get_row()
+        my_col = self.get_column()
+
+        if my_row == 'A':
+            up_row = my_row
+        else:
+            up_row = list(LETTER.keys())[LETTER[my_row] - 2]
+        if my_row == 'J':
+            down_row = my_row
+        else:
+            down_row = list(LETTER.keys())[LETTER[my_row]]
+
+        if my_col == 10:
+            right_col = my_col
+        else:
+            right_col = my_col + 1
+        if my_col == 1:
+            left_col = my_col
+        else:
+            left_col = my_col - 1
+
+        #     1 2 3
+        #     | | |
+        # A - X O X
+        # B - O P O
+        # C - X O X
+        # where O is visible and X not
+        up = up_row + str(my_col)
+        down = down_row + str(my_col)
+        right = my_row + str(right_col)
+        left = my_row + str(left_col)
+        adjacent = [up, down, right, left]
+        return adjacent
+
 
 class Grid:
     def __init__(self):
@@ -112,11 +160,11 @@ class Grid:
         # dict of locations of intersections by pixel as tuples
         # eg grid_locs['A1'] returns (45, 45, weight)
         self.grid_locs = {}
-        t = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8, 'I': 9, 'J': 10}
-        for x in t:
-            for y in range(1, self.height + 1):
-                new_node = Node(x+str(y), t[x]*self.spacing, y*self.spacing, poke_spawn_weights(t[x], y))
-                self.grid_locs[x+str(y)] = new_node
+        t = LETTER
+        for x in range(1, self.height + 1):
+            for y in t:
+                new_node = Node(y+str(x), x*self.spacing, t[y]*self.spacing, poke_spawn_weights(x, t[y]))
+                self.grid_locs[y+str(x)] = new_node
 
 
 class Pokemon(pygame.sprite.Sprite):
@@ -153,6 +201,8 @@ class Pokemon(pygame.sprite.Sprite):
                         ]
         # lists are 0 indexed so -1 to correct for the fact that points are [1,20]
         self.image = self.sprites[self.points-1]
+        # pokemon are started invisible and updated by the player vision function
+        self.image.set_alpha(0)
 
         self.rect = self.image.get_rect()
         self.rect.x = self.x - 10
@@ -187,7 +237,7 @@ class Pokemon(pygame.sprite.Sprite):
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, node, vision_func, human_control):
+    def __init__(self, node, vision_func):
         super().__init__()
 
         self.current_node = node
@@ -203,7 +253,7 @@ class Player(pygame.sprite.Sprite):
         self.can_walk = True
         # pass a function to vision_type it will be used to check which pokemon should be blitted
         self.vision_function = vision_func
-        self.human = human_control
+        self.visible_nodes = []
 
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
@@ -211,6 +261,7 @@ class Player(pygame.sprite.Sprite):
         self.rect.y = self.y - 10
 
         self.points = 0
+        print(self.current_node.name)
 
     def start_walk_timer(self):
         # creates a timer that triggers and event after the time elapses
@@ -237,27 +288,34 @@ class Player(pygame.sprite.Sprite):
         self.rect = self.rect.move(self.step, 0)
         self.start_walk_timer()
 
+    def player_vision_adjacent(self):
+        adjacent = self.current_node.adjacent_nodes
+        # print(adjacent)
+        return adjacent
+
+    def player_vision_radius(self):
+        return
+
     def check_vision(self):
-        visible_nodes = self.vision_function(self.current_node)
-        return visible_nodes
+        self.visible_nodes = self.vision_function(self)
 
     def update(self):
+        self.check_vision()
         # input handling for movement
         pressed = pygame.key.get_pressed()
-        if self.human:
-            if self.can_walk:
-                if pressed[pygame.K_UP]:
-                    if self.rect.centery > 50:
-                        self.move_up()
-                elif pressed[pygame.K_RIGHT]:
-                    if self.rect.centerx < 450:
-                        self.move_right()
-                elif pressed[pygame.K_DOWN]:
-                    if self.rect.centery < 450:
-                        self.move_down()
-                elif pressed[pygame.K_LEFT]:
-                    if self.rect.centerx > 50:
-                        self.move_left()
+        if self.can_walk:
+            if pressed[pygame.K_UP]:
+                if self.rect.centery > 50:
+                    self.move_up()
+            elif pressed[pygame.K_RIGHT]:
+                if self.rect.centerx < 450:
+                    self.move_right()
+            elif pressed[pygame.K_DOWN]:
+                if self.rect.centery < 450:
+                    self.move_down()
+            elif pressed[pygame.K_LEFT]:
+                if self.rect.centerx > 50:
+                    self.move_left()
 
 
 class Game:
@@ -268,13 +326,19 @@ class Game:
         self.logo = image_load(PICS['LOGO'])
         pygame.display.set_icon(self.logo)
 
-        self.grid = Grid()
-
+        self.node_list = pygame.sprite.Group()
+        self.visible_node_list = pygame.sprite.Group()
         self.pokes_list = pygame.sprite.Group()
+        self.visible_poke_list = pygame.sprite.Group()
         self.all_sprites_list = pygame.sprite.Group()
 
+        self.grid = Grid()
+        for node in self.grid.grid_locs:
+            self.node_list.add(self.grid.grid_locs[node])
+
         spawn_key = random.choice(list(self.grid.grid_locs.keys()))
-        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=player_vision_adjacent, human_control=True)
+        print(spawn_key)
+        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=Player.player_vision_adjacent)
         self.all_sprites_list.add(self.player)
 
         self.fps = FPS
@@ -300,7 +364,7 @@ class Game:
         # print('count: ' + str(self.poke_count))
         # print('start: ' + str(new_poke.life_start))
         # print('death at: ' + str(new_poke.life_start + 15 / TIME_SCALE))
-        new_poke.current_node.print_data()
+        # new_poke.current_node.print_data()
 
         self.pokes_list.add(new_poke)
         self.all_sprites_list.add(new_poke)
@@ -344,14 +408,39 @@ class Game:
                     self.player.can_walk = True
                     # print('player can move again')
 
+            # check for collision with new node so we can update player current node
+            node_hit_list = pygame.sprite.spritecollide(self.player, self.node_list, False)
+            for node in node_hit_list:
+                self.player.current_node = node
+                # print(self.player.current_node.name)
+            # check for collision with pokemon and kill them if it happens then increment points
             pokes_hit_list = pygame.sprite.spritecollide(self.player, self.pokes_list, True)
             for poke in pokes_hit_list:
                 self.player.points += poke.points
-                print(self.player.points)
+                # print(self.player.points)
 
             self.all_sprites_list.update()
+
+            for node in self.player.visible_nodes:
+                self.visible_node_list.add(self.grid.grid_locs[node])
+            for node in self.visible_node_list:
+                if node.name not in self.player.visible_nodes:
+                    self.visible_node_list.remove(node)
+
+            for poke in self.pokes_list:
+                if poke.current_node.name in self.player.visible_nodes:
+                    self.visible_poke_list.add(poke)
+                else:
+                    self.visible_poke_list.remove(poke)
+
+            for poke in self.pokes_list:
+                poke.image.set_alpha(0)
+            for poke in self.visible_poke_list:
+                poke.image.set_alpha(255)
             self.screen.blit(self.background, (0, 0))
+            self.visible_node_list.draw(self.screen)
             self.all_sprites_list.draw(self.screen)
+            self.visible_poke_list.draw(self.screen)
             pygame.display.flip()
 
 

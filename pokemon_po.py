@@ -173,6 +173,8 @@ class Game:
         pygame.display.set_caption("Pokemon Po Sim")
         self.background = image_load(PICS['BACKGROUND'])
         self.logo = image_load(PICS['LOGO'])
+        pygame.display.set_icon(self.logo)
+
         self.grid = Grid()
         spawn_key = random.choice(list(self.grid.grid_locs.keys()))
         print(spawn_key)

@@ -2,6 +2,8 @@ import pygame
 import random
 import os
 import math
+import json
+import time
 
 os.chdir(os.path.dirname(__file__))
 pygame.init()
@@ -33,7 +35,8 @@ P = dict(BACKGROUND='PokePo_map.png',
          )
 PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
 # set to scale up or down how fast things run, (0,1) slows game down, (1, inf) speeds up, 1 keeps default
-TIME_SCALE = 1
+TIME_SCALE = 10
+FPS = 30
 
 # custom events
 player_walked_event = pygame.USEREVENT+1
@@ -59,9 +62,8 @@ def poke_times():
     # TODO: assuming mean 30 sd 5
     u = 30
     s = 5
-    # x = random.gauss(u, s)
-    x = 3
-    return math.floor(x) * 1000 / TIME_SCALE
+    x = random.gauss(u, s)
+    return x * 1000 / TIME_SCALE
 
 
 def poke_spawn_weights(x, y):
@@ -88,6 +90,19 @@ class Node:
         self.y = y
         self.weight = weight
 
+        self.pokes_seen_here = []
+
+        self.poke_count = 0
+        self.sum_poke_points = 0
+
+    def print_data(self):
+        print(' ------------- ')
+        print(self.name)
+        print(self.pokes_seen_here[-1])
+        print('weight: ' + str(self.weight))
+        print('total poke seen: ' + str(self.poke_count))
+        print('sum poke points: ' + str(self.sum_poke_points))
+
 
 class Grid:
     def __init__(self):
@@ -105,7 +120,7 @@ class Grid:
 
 
 class Pokemon(pygame.sprite.Sprite):
-    def __init__(self, points, node, count):
+    def __init__(self, points, node, count, spawn_time):
         super().__init__()
 
         self.count = count
@@ -145,7 +160,19 @@ class Pokemon(pygame.sprite.Sprite):
 
         # life time default is 15 sec scaled by TIME_SCALE
         self.time = 15 / TIME_SCALE
-        self.life_start = pygame.time.get_ticks()
+        self.life_start = spawn_time
+
+        self.collect_data_on_node()
+
+    def collect_data_on_node(self):
+        # here we update the corresponding node:
+        # so it tracks the value and time of spawn, est time of death for each pokemon at that node
+        # i figured time of death could be useful to track error in the simulation since it's clearly tied to fps
+        self.current_node.pokes_seen_here.append({'value': self.points,
+                                                  'spawn_time': self.life_start / 1000,
+                                                  'est_death_time': self.life_start / 1000 + 15 / TIME_SCALE})
+        self.current_node.poke_count += 1
+        self.current_node.sum_poke_points += self.points
 
     def update(self):
         self.check_time()
@@ -160,7 +187,7 @@ class Pokemon(pygame.sprite.Sprite):
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, node, vision_func):
+    def __init__(self, node, vision_func, human_control):
         super().__init__()
 
         self.current_node = node
@@ -176,6 +203,7 @@ class Player(pygame.sprite.Sprite):
         self.can_walk = True
         # pass a function to vision_type it will be used to check which pokemon should be blitted
         self.vision_function = vision_func
+        self.human = human_control
 
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
@@ -216,19 +244,20 @@ class Player(pygame.sprite.Sprite):
     def update(self):
         # input handling for movement
         pressed = pygame.key.get_pressed()
-        if self.can_walk:
-            if pressed[pygame.K_UP]:
-                if self.rect.centery > 50:
-                    self.move_up()
-            elif pressed[pygame.K_RIGHT]:
-                if self.rect.centerx < 450:
-                    self.move_right()
-            elif pressed[pygame.K_DOWN]:
-                if self.rect.centery < 450:
-                    self.move_down()
-            elif pressed[pygame.K_LEFT]:
-                if self.rect.centerx > 50:
-                    self.move_left()
+        if self.human:
+            if self.can_walk:
+                if pressed[pygame.K_UP]:
+                    if self.rect.centery > 50:
+                        self.move_up()
+                elif pressed[pygame.K_RIGHT]:
+                    if self.rect.centerx < 450:
+                        self.move_right()
+                elif pressed[pygame.K_DOWN]:
+                    if self.rect.centery < 450:
+                        self.move_down()
+                elif pressed[pygame.K_LEFT]:
+                    if self.rect.centerx > 50:
+                        self.move_left()
 
 
 class Game:
@@ -245,32 +274,37 @@ class Game:
         self.all_sprites_list = pygame.sprite.Group()
 
         spawn_key = random.choice(list(self.grid.grid_locs.keys()))
-        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=player_vision_adjacent)
+        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=player_vision_adjacent, human_control=True)
         self.all_sprites_list.add(self.player)
 
-        self.fps = 30
+        self.fps = FPS
 
         self.poke_count = 0
 
     def spawn_pokemon(self):
-        print('----------------------------')
-        print('spawning a poke')
-        pop = self.grid.grid_locs
-        weights = [i.weight for i in pop.values()]
-        names = [n.name for n in pop.values()]
-        choice = random.choices(population=names, weights=weights)
-        print('at node: ' + choice[0])
-        # print(('with coords: ' + str((self.grid.grid_locs[choice[0]].x, self.grid.grid_locs[choice[0]].y))))
+        nodes = self.grid.grid_locs
+        node_weights = [i.weight for i in nodes.values()]
+        node_names = [n.name for n in nodes.values()]
+        # this chooses with replacement from all nodes on the grid weighted by their respective weights
+        # the returned value is the name of the node in a list eg ['A1']
+        choice = random.choices(population=node_names, weights=node_weights)
 
-        new_poke = Pokemon(poke_points(), node=self.grid.grid_locs[choice[0]], count=str(self.poke_count))
-
+        curr_time = pygame.time.get_ticks()
+        new_poke = Pokemon(poke_points(), node=nodes[choice[0]], count=self.poke_count, spawn_time=curr_time)
         self.poke_count += 1
-        print('value: ' + str(new_poke.points))
-        print('count: ' + str(self.poke_count))
-        print('start: ' + str(pygame.time.get_ticks()/1000))
+
+        # print('----------------------------')
+        # print('spawning a poke')
+        # print('at node: ' + choice[0])
+        # print('value: ' + str(new_poke.points))
+        # print('count: ' + str(self.poke_count))
+        # print('start: ' + str(new_poke.life_start))
+        # print('death at: ' + str(new_poke.life_start + 15 / TIME_SCALE))
+        new_poke.current_node.print_data()
 
         self.pokes_list.add(new_poke)
         self.all_sprites_list.add(new_poke)
+        # this creates a loop of poke spawning based on the timer
         pygame.time.set_timer(pygame.USEREVENT, int(poke_times()), True)
 
     def run(self):
@@ -284,16 +318,31 @@ class Game:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    node_data = {}
+                    run_data_dump = {}
+                    for node in self.grid.grid_locs.values():
+                        node_data[node.name] = {'weight': node.weight,
+                                                     'pokes_seen': node.pokes_seen_here,
+                                                     'count': node.poke_count,
+                                                     'sum_points': node.sum_poke_points}
+                        run_data_dump['elapsed_time'] = pygame.time.get_ticks() / 1000
+                        run_data_dump['score'] = self.player.points
+                        run_data_dump['nodes'] = node_data
+
+                        time_now = time.strftime("%Y%m%d-%H%M%S")
+                        j_time_now = time_now + '.json'
+                        with open(j_time_now, 'w') as out:
+                            json.dump(run_data_dump, out)
                     pygame.quit()
                     quit()
                 if event.type == pygame.USEREVENT:
                     self.spawn_pokemon()
                 if event.type == player_walked_event:
                     self.player.can_walk = False
-                    print('walking...')
+                    # print('walking...')
                 if event.type == player_can_walk_event:
                     self.player.can_walk = True
-                    print('player can move again')
+                    # print('player can move again')
 
             pokes_hit_list = pygame.sprite.spritecollide(self.player, self.pokes_list, True)
             for poke in pokes_hit_list:
@@ -304,7 +353,6 @@ class Game:
             self.screen.blit(self.background, (0, 0))
             self.all_sprites_list.draw(self.screen)
             pygame.display.flip()
-
 
 
 if __name__ == "__main__":

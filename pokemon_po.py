@@ -69,8 +69,7 @@ def poke_times():
     # TODO: assuming mean 30 sd 5
     u = 30
     s = 5
-    # x = random.gauss(u, s)
-    x = 3
+    x = random.gauss(u, s)
     return x * 1000 / TIME_SCALE
 
 
@@ -519,11 +518,12 @@ class Game:
                     run_data_dump = {}
                     for node in self.grid.grid_locs.values():
                         node_data[node.name] = {'weight': node.weight,
-                                                     'pokes_seen': node.pokes_seen_here,
-                                                     'count': node.poke_count,
-                                                     'sum_points': node.sum_poke_points}
+                                                'pokes_seen': node.pokes_seen_here,
+                                                'count': node.poke_count,
+                                                'sum_points': node.sum_poke_points}
                         run_data_dump['elapsed_time'] = pygame.time.get_ticks() / 1000
                         run_data_dump['score'] = self.player.points
+                        run_data_dump['total_poke_created'] = self.poke_count
                         run_data_dump['nodes'] = node_data
 
                         time_now = time.strftime("%Y%m%d-%H%M%S")

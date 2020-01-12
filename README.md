@@ -8,3 +8,6 @@ The objective is to gain as many points as possible in 12 hours.
 
 This project is a simulation for Pokemon Po intended to be used as a way to verify and present the mathematical model of the game
 described and built by myself, Carly and Craig for MATH4194 in Spring 2020.
+
+The code is bad because it was written by me over a period of two days without much planning. 
+The project was assigned Thursday Jan 9, 2020 and the report was due Monday Jan 13, 2020.

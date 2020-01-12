@@ -4,10 +4,18 @@ import os
 import math
 import json
 import time
-import itertools
+import pandas as pd
 from itertools import cycle
 
 os.chdir(os.path.dirname(__file__))
+
+# data importing for node weights
+weight_file = 'xy_weights.xlsx'
+df = pd.read_excel(io=weight_file)
+WEIGHT_LIST = []
+for i, rows in df.iterrows():
+    WEIGHT_LIST.append(rows.tolist())
+
 pygame.init()
 SIZE = [500, 500]
 SCREEN = pygame.display.set_mode(SIZE)
@@ -42,7 +50,9 @@ PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
 TIME_SCALE = 10
 SESSION_TIME = 720 / TIME_SCALE
 FPS = 60
-CONTROL = 'AGENT'
+HUMAN = 'HUMAN'
+AGENT = 'AGENT'
+CONTROL = AGENT
 LETTER = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8, 'I': 9, 'J': 10}
 
 # custom events
@@ -55,9 +65,9 @@ def image_load(name):
 
 
 def poke_points():
-    # TODO: at first im just assuming this is some kind of exponential distribution based on the data we saw
-    # TODO: assuming mean is 3
-    u = 3
+    # we fit the data and got an equation: y=410.9192e^(-0.2142t)
+    # which gives a mean of 4.6685
+    u = 4.6685
     x = random.expovariate(1 / u)
     # no clamp for floats exists in python so this works for that
     # and since x~exp(1/3) returns a lot of values between 1/3 and 1 we ceil instead of floor
@@ -65,21 +75,19 @@ def poke_points():
 
 
 def poke_times():
-    # TODO: assuming gaussian distribution
-    # TODO: assuming mean 30 sd 5
-    u = 30
-    s = 5
+    # The mean and std come from the data we were given
+    # fitted using python
+    u = 30.2
+    s = 9.2
     x = random.gauss(u, s)
     return x * 1000 / TIME_SCALE
 
 
 def poke_spawn_weights(x, y):
-    # TODO: I'm just assigning random weights for now such that they sum to 1 (or pretty close)
-    r = [random.random() for i in range(101)]
-    s = sum(r)
-    r = [i/s for i in r]
-    z = x+10*(y-1)
-    return r[z]
+    # These weights come from the data
+    # total num poke spawned at (x,y) / total overall
+    weight = WEIGHT_LIST[y-1][x-1]
+    return weight
 
 
 def distance_r2(node1, node2):
@@ -265,7 +273,7 @@ class Player(pygame.sprite.Sprite):
         # pass a function to vision_type it will be used to check which pokemon should be blitted
         self.vision_function = vision_func
         self.visible_nodes = []
-        self.vision_radius = 93
+        self.vision_radius = 90
 
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
@@ -346,7 +354,7 @@ class Player(pygame.sprite.Sprite):
 
     def control_movement(self):
         if self.can_walk:
-            if CONTROL == 'HUMAN':
+            if CONTROL == HUMAN:
                 # input handling for movement
                 pressed = pygame.key.get_pressed()
                 if pressed[pygame.K_UP]:
@@ -369,6 +377,11 @@ class Agent:
         self.grid = grid
         self.visible_poke = []
         self.target_queue = []
+        self.path_list = cycle([self.grid.grid_locs['H1'],
+                                self.grid.grid_locs['H2'],
+                                self.grid.grid_locs['H3'],
+                                self.grid.grid_locs['H4']
+                                ])
         # self.path_list = cycle([self.grid.grid_locs['B3'],
         #                         self.grid.grid_locs['C7'],
         #                         self.grid.grid_locs['H1'],
@@ -377,12 +390,12 @@ class Agent:
         #                         self.grid.grid_locs['A5'],
         #                         self.grid.grid_locs['I2']
         #                         ])
-        self.path_list = cycle([self.grid.grid_locs['C2'],
-                                self.grid.grid_locs['C9']])
+        # self.path_list = cycle([self.grid.grid_locs['C2'],
+        #                         self.grid.grid_locs['C9']])
         self.current_target = None
         self.not_moving = True
         self.grabbing_poke = False
-        self.point_threshold = 2
+        self.point_threshold = 1
 
     def move_left(self):
         self.player.move_left()
@@ -398,7 +411,7 @@ class Agent:
 
     def decide_path(self):
         for poke in self.visible_poke:
-            print(poke.current_node.name)
+            # print(poke.current_node.name)
             if self.target_queue[0].poke_curr_here:
                 if poke.points >= self.point_threshold and poke.points >= self.target_queue[0].poke_curr_here.points:
                     if distance_r2(poke.current_node, self.player.current_node) <= \
@@ -577,7 +590,8 @@ class Game:
             self.all_sprites_list.draw(self.screen)
             self.visible_poke_list.draw(self.screen)
 
-            self.agent.strategy(visible=self.visible_poke_list.sprites())
+            if CONTROL == AGENT:
+                self.agent.strategy(visible=self.visible_poke_list.sprites())
 
             pygame.display.flip()
 

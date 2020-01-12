@@ -8,6 +8,7 @@ import time
 os.chdir(os.path.dirname(__file__))
 pygame.init()
 SIZE = [500, 500]
+SCREEN = pygame.display.set_mode(SIZE)
 I_FOLDER = "images"
 P = dict(BACKGROUND='PokePo_map.png',
          NODE='node.png',
@@ -233,7 +234,7 @@ class Pokemon(pygame.sprite.Sprite):
 
     def time_up(self):
         self.kill()
-        print('poke: ' + str(self.count) + ' dying at ' + str(pygame.time.get_ticks()/1000))
+        # print('poke: ' + str(self.count) + ' dying at ' + str(pygame.time.get_ticks()/1000))
 
 
 class Player(pygame.sprite.Sprite):
@@ -254,6 +255,7 @@ class Player(pygame.sprite.Sprite):
         # pass a function to vision_type it will be used to check which pokemon should be blitted
         self.vision_function = vision_func
         self.visible_nodes = []
+        self.vision_radius = 150
 
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
@@ -261,7 +263,6 @@ class Player(pygame.sprite.Sprite):
         self.rect.y = self.y - 10
 
         self.points = 0
-        print(self.current_node.name)
 
     def start_walk_timer(self):
         # creates a timer that triggers and event after the time elapses
@@ -289,12 +290,42 @@ class Player(pygame.sprite.Sprite):
         self.start_walk_timer()
 
     def player_vision_adjacent(self):
-        adjacent = self.current_node.adjacent_nodes
-        # print(adjacent)
-        return adjacent
+        visible = self.current_node.adjacent_nodes
+        return visible
 
     def player_vision_radius(self):
-        return
+        # the nodes are 45 pixels apart so we can use that and the current node to calculate the nodes in the radius
+        # the grid starts at 45 pix on top and 45 on left
+        current_row = self.current_node.get_row()
+        current_row_index = LETTER[current_row]
+        current_col = self.current_node.get_column()
+
+        # we can divide the radius by 45 and floor it to get the number of rows/cols we can see away from center
+        node_delta = math.floor(self.vision_radius / 45)
+
+        visible = []
+        lett_keys = list(LETTER.keys())
+        for x in range(node_delta+1):
+            for y in range(node_delta+1):
+                if current_col + x <= 10:
+                    if current_row_index + y - 1 < len(lett_keys):
+                        if x * x + y * y <= node_delta * node_delta:
+                            n_row = lett_keys[current_row_index + y - 1]
+                            visible.append(n_row + str(current_col + x))
+                    if current_row_index - y - 1 >= 0:
+                        if x * x + y * y <= node_delta * node_delta:
+                            n_row = lett_keys[current_row_index - y - 1]
+                            visible.append(n_row + str(current_col + x))
+                if current_col - x >= 1:
+                    if current_row_index + y - 1 < len(lett_keys):
+                        if x * x + y * y <= node_delta * node_delta:
+                            n_row = lett_keys[current_row_index + y - 1]
+                            visible.append(n_row + str(current_col - x))
+                    if current_row_index - y - 1 >= 0:
+                        if x * x + y * y <= node_delta * node_delta:
+                            n_row = lett_keys[current_row_index - y - 1]
+                            visible.append(n_row + str(current_col - x))
+        return visible
 
     def check_vision(self):
         self.visible_nodes = self.vision_function(self)
@@ -320,7 +351,7 @@ class Player(pygame.sprite.Sprite):
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode(SIZE)
+        self.screen = SCREEN
         pygame.display.set_caption("Pokemon Po Sim")
         self.background = image_load(PICS['BACKGROUND'])
         self.logo = image_load(PICS['LOGO'])
@@ -338,7 +369,7 @@ class Game:
 
         spawn_key = random.choice(list(self.grid.grid_locs.keys()))
         print(spawn_key)
-        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=Player.player_vision_adjacent)
+        self.player = Player(node=self.grid.grid_locs[spawn_key], vision_func=Player.player_vision_radius)
         self.all_sprites_list.add(self.player)
 
         self.fps = FPS

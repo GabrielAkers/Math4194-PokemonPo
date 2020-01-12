@@ -4,6 +4,8 @@ import os
 import math
 import json
 import time
+import itertools
+from itertools import cycle
 
 os.chdir(os.path.dirname(__file__))
 pygame.init()
@@ -37,9 +39,10 @@ P = dict(BACKGROUND='PokePo_map.png',
          )
 PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
 # set to scale up or down how fast things run, (0,1) slows game down, (1, inf) speeds up, 1 keeps default
-TIME_SCALE = 3
+TIME_SCALE = 10
+SESSION_TIME = 720 / TIME_SCALE
 FPS = 60
-CONTROL = 'HUMAN'
+CONTROL = 'AGENT'
 LETTER = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8, 'I': 9, 'J': 10}
 
 # custom events
@@ -95,6 +98,7 @@ class Node(pygame.sprite.Sprite):
         self.adjacent_nodes = self.get_adjacent()
 
         self.pokes_seen_here = []
+        self.poke_curr_here = None
 
         self.poke_count = 0
         self.sum_poke_points = 0
@@ -212,6 +216,7 @@ class Pokemon(pygame.sprite.Sprite):
         # life time default is 15 sec scaled by TIME_SCALE
         self.time = 15 / TIME_SCALE
         self.life_start = spawn_time
+        self.alive = True
 
         self.collect_data_on_node()
 
@@ -234,6 +239,8 @@ class Pokemon(pygame.sprite.Sprite):
 
     def time_up(self):
         self.kill()
+        self.current_node.poke_curr_here = None
+        self.alive = False
         # print('poke: ' + str(self.count) + ' dying at ' + str(pygame.time.get_ticks()/1000))
 
 
@@ -255,7 +262,7 @@ class Player(pygame.sprite.Sprite):
         # pass a function to vision_type it will be used to check which pokemon should be blitted
         self.vision_function = vision_func
         self.visible_nodes = []
-        self.vision_radius = 150
+        self.vision_radius = 93
 
         self.image = image_load(PICS['PLAYER'])
         self.rect = self.image.get_rect()
@@ -274,20 +281,24 @@ class Player(pygame.sprite.Sprite):
         pygame.event.post(e)
 
     def move_up(self):
-        self.rect = self.rect.move(0, -self.step)
-        self.start_walk_timer()
+        if self.rect.centery > 50 and self.can_walk:
+            self.rect = self.rect.move(0, -self.step)
+            self.start_walk_timer()
 
     def move_down(self):
-        self.rect = self.rect.move(0, self.step)
-        self.start_walk_timer()
+        if self.rect.centery < 450 and self.can_walk:
+            self.rect = self.rect.move(0, self.step)
+            self.start_walk_timer()
 
     def move_left(self):
-        self.rect = self.rect.move(-self.step, 0)
-        self.start_walk_timer()
+        if self.rect.centerx > 50 and self.can_walk:
+            self.rect = self.rect.move(-self.step, 0)
+            self.start_walk_timer()
 
     def move_right(self):
-        self.rect = self.rect.move(self.step, 0)
-        self.start_walk_timer()
+        if self.rect.centerx < 450 and self.can_walk:
+            self.rect = self.rect.move(self.step, 0)
+            self.start_walk_timer()
 
     def player_vision_adjacent(self):
         visible = self.current_node.adjacent_nodes
@@ -330,23 +341,119 @@ class Player(pygame.sprite.Sprite):
     def check_vision(self):
         self.visible_nodes = self.vision_function(self)
 
+    def control_movement(self):
+        if self.can_walk:
+            if CONTROL == 'HUMAN':
+                # input handling for movement
+                pressed = pygame.key.get_pressed()
+                if pressed[pygame.K_UP]:
+                    self.move_up()
+                elif pressed[pygame.K_RIGHT]:
+                    self.move_right()
+                elif pressed[pygame.K_DOWN]:
+                    self.move_down()
+                elif pressed[pygame.K_LEFT]:
+                    self.move_left()
+
     def update(self):
         self.check_vision()
-        # input handling for movement
-        pressed = pygame.key.get_pressed()
-        if self.can_walk:
-            if pressed[pygame.K_UP]:
-                if self.rect.centery > 50:
-                    self.move_up()
-            elif pressed[pygame.K_RIGHT]:
-                if self.rect.centerx < 450:
-                    self.move_right()
-            elif pressed[pygame.K_DOWN]:
-                if self.rect.centery < 450:
-                    self.move_down()
-            elif pressed[pygame.K_LEFT]:
-                if self.rect.centerx > 50:
+        self.control_movement()
+
+
+class Agent:
+    def __init__(self, player, grid):
+        self.player = player
+        self.grid = grid
+        self.visible_poke = []
+        self.target_queue = []
+        # self.path_list = cycle([self.grid.grid_locs['B3'],
+        #                         self.grid.grid_locs['C7'],
+        #                         self.grid.grid_locs['H1'],
+        #                         self.grid.grid_locs['D4'],
+        #                         self.grid.grid_locs['J6'],
+        #                         self.grid.grid_locs['A5'],
+        #                         self.grid.grid_locs['I2']
+        #                         ])
+        self.path_list = cycle([self.grid.grid_locs['C2'],
+                                self.grid.grid_locs['C9']])
+        self.current_target = None
+        self.not_moving = True
+        self.grabbing_poke = False
+        self.point_threshold = 2
+
+    def move_left(self):
+        self.player.move_left()
+
+    def move_right(self):
+        self.player.move_right()
+
+    def move_up(self):
+        self.player.move_up()
+
+    def move_down(self):
+        self.player.move_down()
+
+    def search(self):
+        # looks at visible nodes and determines if there is a pokemon on them
+        visible_nodes = self.player.visible_nodes
+        for i in visible_nodes:
+            if self.grid.grid_locs[i].poke_curr_here:
+                if self.grid.grid_locs[i].poke_curr_here not in self.visible_poke:
+                    self.visible_poke.append(self.grid.grid_locs[i].poke_curr_here)
+        for poke in self.visible_poke:
+            if not poke.alive:
+                self.visible_poke.remove(poke)
+            if poke.current_node not in self.player.visible_nodes and poke in self.visible_poke:
+                self.visible_poke.remove(poke)
+
+        # print(self.visible_poke)
+
+    def decide_path(self):
+        if not self.grabbing_poke:
+            for poke in self.visible_poke:
+                print(poke.current_node.name)
+                if poke.points >= self.point_threshold:
+                    print('poke spotted at {0}'.format(poke.current_node))
+                    if poke.current_node not in self.target_queue:
+                        self.grabbing_poke = True
+                        self.target_queue = []
+                        self.target_queue.append(poke.current_node)
+            if len(self.target_queue) < 3:
+                self.target_queue.append(next(self.path_list))
+
+    def go_to(self):
+        if len(self.target_queue) > 0:
+            self.current_target = self.target_queue[0]
+            node = self.current_target
+            # print('current node: ' + self.player.current_node.name)
+            # print('target: ' + node.name)
+            # print(node.name)
+            if node:
+                # print('moving to next location...')
+                # row index [1, 10] be careful arrays are 0 indexed
+                player_row_index = self.player.current_node.get_row()
+                player_col_index = self.player.current_node.get_column()
+
+                if node.get_column() < player_col_index:
                     self.move_left()
+                elif LETTER[node.get_row()] < LETTER[player_row_index]:
+                    self.move_up()
+                elif node.get_column() > player_col_index:
+                    self.move_right()
+                elif LETTER[node.get_row()] > LETTER[player_row_index]:
+                    self.move_down()
+
+                if self.player.current_node == node:
+                    self.target_queue.pop(0)
+                    self.decide_path()
+                    self.grabbing_poke = False
+                    return
+        self.decide_path()
+
+    def strategy(self, **kwargs):
+        self.search()
+        self.go_to()
+        return
 
 
 class Game:
@@ -356,6 +463,7 @@ class Game:
         self.background = image_load(PICS['BACKGROUND'])
         self.logo = image_load(PICS['LOGO'])
         pygame.display.set_icon(self.logo)
+        self.font = pygame.font.SysFont('Comic Sans MS', 15)
 
         self.node_list = pygame.sprite.Group()
         self.visible_node_list = pygame.sprite.Group()
@@ -376,6 +484,11 @@ class Game:
 
         self.poke_count = 0
 
+        self.agent = Agent(self.player, self.grid)
+
+        # this starts a timer that kills the game after "12 hours" or 720 seconds scaled by TIME_SCALE
+        pygame.time.set_timer(pygame.QUIT, int(SESSION_TIME * 1000), True)
+
     def spawn_pokemon(self):
         nodes = self.grid.grid_locs
         node_weights = [i.weight for i in nodes.values()]
@@ -386,6 +499,7 @@ class Game:
 
         curr_time = pygame.time.get_ticks()
         new_poke = Pokemon(poke_points(), node=nodes[choice[0]], count=self.poke_count, spawn_time=curr_time)
+        nodes[choice[0]].poke_curr_here = new_poke
         self.poke_count += 1
 
         # print('----------------------------')
@@ -434,10 +548,11 @@ class Game:
                     self.spawn_pokemon()
                 if event.type == player_walked_event:
                     self.player.can_walk = False
-                    # print('walking...')
+                    # print('-------------')
+                    # print('walked at: ' + str(pygame.time.get_ticks()/1000))
                 if event.type == player_can_walk_event:
                     self.player.can_walk = True
-                    # print('player can move again')
+                    # print('player can move again: ' + str(pygame.time.get_ticks()/1000))
 
             # check for collision with new node so we can update player current node
             node_hit_list = pygame.sprite.spritecollide(self.player, self.node_list, False)
@@ -468,10 +583,14 @@ class Game:
                 poke.image.set_alpha(0)
             for poke in self.visible_poke_list:
                 poke.image.set_alpha(255)
+
             self.screen.blit(self.background, (0, 0))
             self.visible_node_list.draw(self.screen)
             self.all_sprites_list.draw(self.screen)
             self.visible_poke_list.draw(self.screen)
+
+            self.agent.strategy()
+
             pygame.display.flip()
 
 

@@ -83,6 +83,10 @@ def poke_spawn_weights(x, y):
     return r[z]
 
 
+def distance_r2(node1, node2):
+    return math.sqrt((node1.x-node2.x)*(node1.x-node2.x) + (node1.y-node2.y)*(node1.y-node2.y))
+
+
 class Node(pygame.sprite.Sprite):
     def __init__(self, name, x, y, weight):
         super().__init__()
@@ -393,33 +397,20 @@ class Agent:
     def move_down(self):
         self.player.move_down()
 
-    def search(self):
-        # looks at visible nodes and determines if there is a pokemon on them
-        visible_nodes = self.player.visible_nodes
-        for i in visible_nodes:
-            if self.grid.grid_locs[i].poke_curr_here:
-                if self.grid.grid_locs[i].poke_curr_here not in self.visible_poke:
-                    self.visible_poke.append(self.grid.grid_locs[i].poke_curr_here)
-        for poke in self.visible_poke:
-            if not poke.alive:
-                self.visible_poke.remove(poke)
-            if poke.current_node not in self.player.visible_nodes and poke in self.visible_poke:
-                self.visible_poke.remove(poke)
-
-        # print(self.visible_poke)
-
     def decide_path(self):
-        if not self.grabbing_poke:
-            for poke in self.visible_poke:
-                print(poke.current_node.name)
+        for poke in self.visible_poke:
+            print(poke.current_node.name)
+            if self.target_queue[0].poke_curr_here:
+                if poke.points >= self.point_threshold and poke.points >= self.target_queue[0].poke_curr_here.points:
+                    if distance_r2(poke.current_node, self.player.current_node) <= \
+                            distance_r2(self.player.current_node, self.target_queue[0]):
+                        self.target_queue[0] = poke.current_node
+                        return
+            else:
                 if poke.points >= self.point_threshold:
-                    print('poke spotted at {0}'.format(poke.current_node))
-                    if poke.current_node not in self.target_queue:
-                        self.grabbing_poke = True
-                        self.target_queue = []
-                        self.target_queue.append(poke.current_node)
-            if len(self.target_queue) < 3:
-                self.target_queue.append(next(self.path_list))
+                    self.target_queue[0] = poke.current_node
+                    return
+        self.target_queue.append(next(self.path_list))
 
     def go_to(self):
         if len(self.target_queue) > 0:
@@ -445,13 +436,10 @@ class Agent:
 
                 if self.player.current_node == node:
                     self.target_queue.pop(0)
-                    self.decide_path()
-                    self.grabbing_poke = False
-                    return
         self.decide_path()
 
     def strategy(self, **kwargs):
-        self.search()
+        self.visible_poke = kwargs['visible']
         self.go_to()
         return
 
@@ -589,7 +577,7 @@ class Game:
             self.all_sprites_list.draw(self.screen)
             self.visible_poke_list.draw(self.screen)
 
-            self.agent.strategy()
+            self.agent.strategy(visible=self.visible_poke_list.sprites())
 
             pygame.display.flip()
 

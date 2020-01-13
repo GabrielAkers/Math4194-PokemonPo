@@ -47,7 +47,7 @@ P = dict(BACKGROUND='PokePo_map.png',
          )
 PICS = {k: os.path.join(I_FOLDER, v) for k, v in P.items()}
 # set to scale up or down how fast things run, (0,1) slows game down, (1, inf) speeds up, 1 keeps default
-TIME_SCALE = 10
+TIME_SCALE = 100
 SESSION_TIME = 720 / TIME_SCALE
 FPS = 60
 HUMAN = 'HUMAN'

@@ -18,6 +18,7 @@ The project was assigned at night Thursday Jan 9, 2020 and the report was due th
 1) Download the project
 2) Install requirements found in requirements.txt
 3) Run pokemon_po.py
+4) Read outputted data in the json file that is generated each run
 
 
 # EXPLANATION OF VARIABLES:
@@ -29,6 +30,9 @@ CONTROL = AGENT : to have the agent play
 
 
 TIME_SCALE = x : scales timing by x, x in (0,1) makes the sim run slower, x > 1 makes it faster and x=1 runs at default speed
+this controls ALL timing in the simulation
+
+SESSION_TIME = x : default is 720 seconds which corresponds to 12 hours as per the problem statement. the game will exit after this time, but you can change that behavior Game.run. just change lines 546 and 547 so the game doesnt exit after seeing the session time up event. it will now just log data every x seconds (scaled by TIME_SCALE of course) instead of closing
 
 
 poke_points() : controls the point values of individual pokemon

@@ -10,4 +10,41 @@ This project is a simulation for Pokemon Po intended to be used as a way to veri
 described and built by myself, Carly and Craig for MATH4194 in Spring 2020.
 
 The code is bad because it was written by me over a period of two days without much planning. 
-The project was assigned Thursday Jan 9, 2020 and the report was due Monday Jan 13, 2020.
+The project was assigned at night Thursday Jan 9, 2020 and the report was due the morning of Monday Jan 13, 2020.
+
+# INSTRUCTIONS:
+
+
+1) Download the project
+2) Install requirements found in requirements.txt
+3) Run pokemon_po.py
+
+
+# EXPLANATION OF VARIABLES:
+
+
+CONTROL = HUMAN : to play yourself with arrow keys
+
+CONTROL = AGENT : to have the agent play
+
+
+TIME_SCALE = x : scales timing by x, x in (0,1) makes the sim run slower, x > 1 makes it faster and x=1 makes is default
+
+
+poke_points() : controls the point values of individual pokemon
+
+poke_times() : controls the time between pokemon spawns
+
+poke_spawn_weights(x,y) : assigns weights to each node in the grid. I recommend just building your own weight matrix in the shape of mine instead of changing this function
+
+
+Player.vision_function = func : func just needs to return a list of visible nodes. I've provided two already that can be used - player_vision_radius() and player_vision_adjacent(). You should set this when you instantiate a Player
+
+Player.vision_radius = x : Xmod45 is how many nodes can be seen by the agent in a circle around the player object
+
+
+Agent.path_list = [] : define a list of nodes on the grid like I did in the default case for the agent to go to. if you make it a cycle using itertools it will create a closed loop for it to continuously go for
+
+Agent.point_threshold = x : if a pokemon is spotted in the vision radius of the player and its point value is higher than this threshold and it is closer than the previous pokemon target and the point value is higher than the previous target then it will path to that pokemon's last seen position to get it
+
+

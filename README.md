@@ -35,7 +35,7 @@ poke_points() : controls the point values of individual pokemon
 
 poke_times() : controls the time between pokemon spawns
 
-poke_spawn_weights(x,y) : assigns weights to each node in the grid. I recommend just building your own weight matrix in the shape of mine instead of changing this function
+poke_spawn_weights(x,y) : assigns weights to each node in the grid. I recommend just building your own weight matrix in the shape of mine and assigning it to weight_file instead of modifying this function
 
 
 Player.vision_function = func : func just needs to return a list of visible nodes. I've provided two already that can be used - player_vision_radius() and player_vision_adjacent(). You should set this when you instantiate a Player

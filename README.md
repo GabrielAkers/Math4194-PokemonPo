@@ -28,7 +28,7 @@ CONTROL = HUMAN : to play yourself with arrow keys
 CONTROL = AGENT : to have the agent play
 
 
-TIME_SCALE = x : scales timing by x, x in (0,1) makes the sim run slower, x > 1 makes it faster and x=1 makes is default
+TIME_SCALE = x : scales timing by x, x in (0,1) makes the sim run slower, x > 1 makes it faster and x=1 runs at default speed
 
 
 poke_points() : controls the point values of individual pokemon

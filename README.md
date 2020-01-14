@@ -20,6 +20,8 @@ The project was assigned at night Thursday Jan 9, 2020 and the report was due th
 3) Run pokemon_po.py
 4) Read outputted data in the json file that is generated each run
 
+The advantage to generating data this way is that you can see the state of the game at every time step by analyzing the data in the run json. So a replay function could be built using the data.
+
 
 # EXPLANATION OF VARIABLES:
 

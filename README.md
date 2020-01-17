@@ -46,7 +46,7 @@ poke_spawn_weights(x,y) : assigns weights to each node in the grid. I recommend 
 
 Player.vision_function = func : func just needs to return a list of visible nodes. I've provided two already that can be used - player_vision_radius() and player_vision_adjacent(). You should set this when you instantiate a Player
 
-Player.vision_radius = x : Xmod45 is how many nodes can be seen by the agent in a circle around the player object
+Player.vision_radius = x : xmod45 is how many nodes can be seen by the agent in a circle around the player object
 
 
 Agent.path_list = [] : define a list of nodes on the grid like I did in the default case for the agent to go to. if you make it a cycle using itertools it will create a closed loop for it to continuously go for
